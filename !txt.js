@@ -28,42 +28,7 @@ function f2(s) {
 function f3(s) {
     try {
         if (s?.readyState === WebSocket.OPEN || s?.readyState === WebSocket.CLOSING) s.close();
-    } catch (e) {}
-}
-
-function f4(p) {
-    if (!p) return null;
-    p = p.trim();
-
-    const m = p.match(/^\[([^\]]+)\](?::(\d+))?$/);
-    if (m) {
-        const pt = parseInt(m[2], 10);
-        return { t: 'direct', h: m[1], p: (!isNaN(pt) && pt > 0) ? pt : 443 };
-    }
-
-    const l = p.lastIndexOf(':');
-    if (l > 0) {
-        const h = p.substring(0, l);
-        const pt = parseInt(p.substring(l + 1), 10);
-        if (!isNaN(pt) && pt > 0 && pt <= 65535) return { t: 'direct', h, p: pt };
-    }
-
-    return { t: 'direct', h: p, p: 443 };
-}
-
-async function f5(d, t) {
-    const f = async (u) => {
-        try {
-            const r = await fetch(`${u}?name=${d}&type=${t}`, { headers: { 'Accept': 'application/dns-json' } });
-            if (r.ok) {
-                const j = await r.json();
-                return j.Answer || [];
-            }
-        } catch (e) {}
-        return null;
-    };
-    const r = await f('https://1.1.1.1/dns-query');
-    return r || (await f('https://dns.google/dns-query')) || [];
+    } catch {}
 }
 
 function f6(s) {
@@ -74,6 +39,23 @@ function f6(s) {
         p = m[3] ? parseInt(m[3], 10) : 443;
     }
     return [a, p];
+}
+
+function f4(p) {
+    if (!p) return null;
+    const [h, pt] = f6(p.trim());
+    return { t: 'direct', h, p: pt };
+}
+
+async function f5(d, t) {
+    const f = async (u) => {
+        try {
+            const r = await fetch(`${u}?name=${d}&type=${t}`, { headers: { 'Accept': 'application/dns-json' } });
+            if (r.ok) return (await r.json()).Answer || [];
+        } catch {}
+        return null;
+    };
+    return (await f('https://1.1.1.1/dns-query')) || (await f('https://dns.google/dns-query')) || [];
 }
 
 async function f7(s, t = 'dash.cloudflare.com', u = '00000000-0000-4000-8000-000000000000') {
@@ -89,7 +71,7 @@ async function f7(s, t = 'dash.cloudflare.com', u = '00000000-0000-4000-8000-000
         const tr = await f5(td, 'TXT');
         const td2 = tr.filter(r => r.type === 16).map(r => r.data);
         if (td2.length > 0) {
-            let d = td2[0].replace(/^"|"$/g, '');
+            const d = td2[0].replace(/^"|"$/g, '');
             const p = d.replace(/\\010|\n/g, ',').split(',').map(x => x.trim()).filter(Boolean);
             a = p.map(f6);
         }
@@ -133,7 +115,7 @@ export default {
             let cv = null;
 
             if (u.pathname.startsWith('/fdip=')) {
-                try { cv = decodeURIComponent(u.pathname.substring(9)).trim(); } catch (e) {}
+                try { cv = decodeURIComponent(u.pathname.substring(6)).trim(); } catch {}
                 if (cv && !is) {
                     v1 = cv;
                     return new Response(`set fdIP to: ${v1}\n\n`, {
@@ -148,15 +130,14 @@ export default {
             }
 
             return new Response('Not Found', { status: 404 });
-        } catch (err) {
+        } catch {
             return new Response('Internal Server Error', { status: 500 });
         }
     },
 };
 
 async function f8(rq, cv) {
-    const wp = new WebSocketPair();
-    const [c, s] = Object.values(wp);
+    const { 0: c, 1: s } = new WebSocketPair();
     s.accept();
     let rw = { sk: null };
     let dq = false;
@@ -211,7 +192,7 @@ async function f10(at, h, pn, rwd, ws, rh, rw, cv) {
         try {
             const rl = await f7(c1, h, v2);
             if (rl?.length > 0) [pc.h, pc.p] = rl[0];
-        } catch (e) {}
+        } catch {}
     }
 
     const cp = async () => {
@@ -225,13 +206,11 @@ async function f10(at, h, pn, rwd, ws, rh, rw, cv) {
         const is = await cd(h, pn, rwd);
         rw.sk = is;
         f13(is, ws, rh, cp);
-    } catch (e) { await cp(); }
+    } catch { await cp(); }
 }
 
 function f11(ck, tk) {
-    if (ck.byteLength < 24) return { he: true, m: 'invalid' };
-    
-    if (f1(ck, 1) !== tk) return { he: true, m: 'invalid' };
+    if (ck.byteLength < 24 || f1(ck, 1) !== tk) return { he: true, m: 'invalid' };
     
     const ol = ck[17];
     const c = ck[18 + ol];
@@ -281,23 +260,40 @@ function f12(sk, edh) {
 
 async function f13(rs, ws, hd, rf) {
     let h = hd, hd_f = false;
-    await rs.readable.pipeTo(new WritableStream({
-        async write(ck, co) {
+    
+    const reader = rs.readable.getReader({ mode: "byob" });
+    let buffer = new ArrayBuffer(16384); 
+
+    try {
+        while (true) {
+            const { done, value } = await reader.read(new Uint8Array(buffer));
+            
+            if (done) break;
+            
+            buffer = value.buffer;
             hd_f = true;
-            if (ws.readyState !== WebSocket.OPEN) { co.error('closed'); return; }
+            
+            if (ws.readyState !== WebSocket.OPEN) break;
+
             if (h) {
-                const r = new Uint8Array(h.length + ck.byteLength);
-                r.set(h, 0); r.set(ck, h.length);
+                const r = new Uint8Array(h.length + value.byteLength);
+                r.set(h, 0); r.set(value, h.length);
                 ws.send(r); 
                 h = null;
             } else {
-                ws.send(ck);
+                ws.send(value);
             }
-        },
-        abort() {},
-    })).catch(() => f3(ws));
+        }
+    } catch {} 
+    finally {
+        try { reader.releaseLock(); } catch {}
+    }
     
-    if (!hd_f && rf) await rf();
+    if (!hd_f && rf) {
+        await rf();
+    } else {
+        f3(ws);
+    }
 }
 
 async function f14(uc, ws, rh) {
@@ -308,19 +304,27 @@ async function f14(uc, ws, rh) {
         await wt.write(uc);
         wt.releaseLock();
         
-        await ts.readable.pipeTo(new WritableStream({
-            async write(ck) {
-                if (ws.readyState === WebSocket.OPEN) {
-                    if (vh) {
-                        const r = new Uint8Array(vh.length + ck.byteLength);
-                        r.set(vh, 0); r.set(ck, vh.length);
-                        ws.send(r);
-                        vh = null;
-                    } else {
-                        ws.send(ck);
-                    }
+        const reader = ts.readable.getReader({ mode: "byob" });
+        let buffer = new ArrayBuffer(4096);
+
+        while (true) {
+            const { done, value } = await reader.read(new Uint8Array(buffer));
+            if (done) break;
+            
+            buffer = value.buffer;
+            if (ws.readyState === WebSocket.OPEN) {
+                if (vh) {
+                    const r = new Uint8Array(vh.length + value.byteLength);
+                    r.set(vh, 0); r.set(value, vh.length);
+                    ws.send(r);
+                    vh = null;
+                } else {
+                    ws.send(value);
                 }
-            },
-        }));
-    } catch (e) {}
+            } else {
+                break;
+            }
+        }
+        reader.releaseLock();
+    } catch {}
 }
