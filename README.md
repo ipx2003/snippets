@@ -1,5 +1,5 @@
 ## 文件说明  
-* **snippets.js**：支持 `!txt/socks5/http/https/sstp`，这个 https 非完全体，不支持 IP  
+* **snippets.js**：支持 `!txt/socks5/http/https/sstp/turn`，这个 https 非完全体，不支持 IP  
 * **!txt.js**：支持 `!txt`  
 * **!txt+https.js**：支持 `!txt/https`，这个 https 是完全体，支持 IP 跳过验证  
 * **!txt+sstp+turn.js**：支持 `!txt/sstp/turn`  
