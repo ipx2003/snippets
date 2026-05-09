@@ -8,12 +8,32 @@ const e=769,t=771,n=772,r=20,i=21,s=22,a=23,h=1,c=2,o=4,l=8,f=11,u=12,y=13,p=14,
 // ==================== merged target ====================
 
 import { connect } from 'cloudflare:sockets';
+
+// ==================== 全局配置 ====================
+const CONFIG = {
+  // 将此值设为 true，即可强制全局使用备用 API
+  FORCE_FALLBACK: false,
+
+  // 主 API 列表: [标识名, 完整URL, Host, 请求路径]
+  PRIMARY_APIS: [
+    ['apiV4', 'https://ipv4.090227.xyz', 'ipv4.090227.xyz', '/'],
+    ['apiV6', 'https://ipv6.090227.xyz', 'ipv6.090227.xyz', '/']
+  ],
+
+  // 备用 API 列表: 键名必须与主 API 的标识名相对应
+  FALLBACK_APIS: {
+    apiV4: ['dbip', 'https://api.db-ip.com/v2/free/self', 'api.db-ip.com', '/v2/free/self'],
+    apiV6: ['ipsb', 'https://api.ip.sb/geoip', 'api.ip.sb', '/geoip']
+  }
+};
+// ==================================================
+
 const enc = L, dec = K, TMO = 5e3, RDL = 65536, EOL = Uint8Array.of(13, 10), SEP = Uint8Array.of(13, 10, 13, 10),
   SRE = /^HTTP\/\d\.\d\s+(\d{3})/, CRE = /\r\ntransfer-encoding:\s*chunked\r\n/i,
   USE = [ 'GET /probe?candidate=118.34.215.56:34042', 'GET /probe?candidates=1.1.1.1:443,2.2.2.2:443', 'POST JSON {"candidate":"118.34.215.56:34042"}', ],
   mktg = ([n, u, h, p]) => ({ n, u, h, q: enc.encode(`GET ${p} HTTP/1.1\r\nHost: ${h}\r\nUser-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\r\nAccept: */*\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n`) }),
-  TGS = [ ['cmv4', 'https://ipv4.090227.xyz', 'ipv4.090227.xyz', '/'], ['cmv6', 'https://ipv6.090227.xyz', 'ipv6.090227.xyz', '/'] ].map(mktg),
-  FBTGS = { cmv4: mktg(['dbip', 'https://api.db-ip.com/v2/free/self', 'api.db-ip.com', '/v2/free/self']), cmv6: mktg(['ipsb', 'https://api.ip.sb/geoip', 'api.ip.sb', '/geoip']) },
+  TGS = CONFIG.PRIMARY_APIS.map(mktg),
+  FBTGS = Object.fromEntries(Object.entries(CONFIG.FALLBACK_APIS).map(([k, v]) => [k, mktg(v)])),
   uq = v => [...new Set((Array.isArray(v) ? v : `${v ?? ''}`.split(/[\s,]+/)).map(x => `${x ?? ''}`.trim()).filter(Boolean))],
   pi = (v, d) => ((n) => Number.isFinite(n) && n > 0 ? n : d)(Number.parseInt(`${v ?? ''}`, 10)),
   ipf = h => /^\d{1,3}(?:\.\d{1,3}){3}$/.test(h) && h.split('.').every(x => Number(x) <= 255) ? 'ipv4' : h.includes(':') ? 'ipv6' : null,
@@ -28,7 +48,7 @@ const enc = L, dec = K, TMO = 5e3, RDL = 65536, EOL = Uint8Array.of(13, 10), SEP
   inp = async req => { const sp = new URL(req.url).searchParams, txt = req.method === 'POST' ? await req.text() : '', x = txt ? JSON.parse(txt) : {}, raw = x.candidates ?? x.candidate ?? sp.get('candidates') ?? sp.get('candidate'); return { cs: uq(raw), to: pi(x.timeoutMs ?? sp.get('timeoutMs'), TMO), rl: pi(x.readLimit ?? sp.get('readLimit'), RDL) }; },
   pc = (c, d = 443) => { if (c.startsWith('[')) { const m = c.match(/^\[([^\]]+)\](?::(\d+))?$/); if (!m) throw new Error(`invalid IPv6 candidate: ${c}`); return { r: c, h: m[1], p: Number(m[2]) || d }; } const [, h = c, p] = c.match(/^([^:]+):(\d+)$/) ?? []; return { r: c, h, p: Number(p) || d }; },
   rr = async (tc, to, rl) => { const xs = []; for (let n = 0; n < rl;) { const x = (await wt(tc.read(), to, 'http read'))?.subarray(0, rl - n); if (!x?.length) break; xs.push(x), n += x.length; } return cat(xs); },
-  stk = rs => { const d = Object.fromEntries(rs.map(x => [x.probe_name, x])), v4 = d.cmv4 || d.dbip, v6 = d.cmv6 || d.ipsb, fs = [...new Set(rs.flatMap(x => x.ok && x.exit_family ? [x.exit_family] : []))]; return v4?.ok && v6?.ok && v4.exit_family === 'ipv4' && v6.exit_family === 'ipv6' ? { s: 'dual_stack', fs } : v4?.ok && v6?.ok && v4.exit_family === 'ipv4' && v6.exit_family === 'ipv4' ? { s: 'ipv4_only', fs: ['ipv4'] } : v6?.ok && v6.exit_family === 'ipv6' && (!v4 || !v4.ok || v4.exit_family !== 'ipv4') ? { s: 'ipv6_only', fs: ['ipv6'] } : { s: 'unknown', fs }; },
+  stk = rs => { const d = Object.fromEntries(rs.map(x => [x.probe_name, x])), v4 = d.apiV4 || d.dbip, v6 = d.apiV6 || d.ipsb, fs = [...new Set(rs.flatMap(x => x.ok && x.exit_family ? [x.exit_family] : []))]; return v4?.ok && v6?.ok && v4.exit_family === 'ipv4' && v6.exit_family === 'ipv6' ? { s: 'dual_stack', fs } : v4?.ok && v6?.ok && v4.exit_family === 'ipv4' && v6.exit_family === 'ipv4' ? { s: 'ipv4_only', fs: ['ipv4'] } : v6?.ok && v6.exit_family === 'ipv6' && (!v4 || !v4.ok || v4.exit_family !== 'ipv4') ? { s: 'ipv6_only', fs: ['ipv6'] } : { s: 'unknown', fs }; },
   hit = async (c, tg, to, rl) => { let so = null, tc = null, cm = null, tm = null, hm = null, sc = null; const out = (ok, status_code, error, { exitIp: exit_ip = null, exitFamily: exit_family = null, exitCountry: exit_country = null, exitRegion: exit_region = null, exitCity: exit_city = null, exitColo: exit_colo = null, exitAsn: exit_asn = null, exitOrg: exit_org = null } = {}) => ({ target: tg.u, probe_name: tg.n, candidate: c.r, connect_ms: cm, tls_ms: tm, http_ms: hm, status_code, ok, error, exit_ip, exit_family, exit_country, exit_region, exit_city, exit_colo, exit_asn, exit_org }); try { let t = Date.now(); so = connect({ hostname: c.h, port: c.p }); await wt(so.opened, to, 'tcp connect'); cm = Date.now() - t, t = Date.now(), tc = new TlsClient(so, { serverName: tg.h, timeout: to }); await wt(tc.handshake(), to, 'tls handshake'); tm = Date.now() - t, t = Date.now(), await wt(tc.write(tg.q), to, 'http write'); const raw = await rr(tc, to, rl); if (hm = Date.now() - t, !raw.length) return out(false, null, 'empty response'); const { s, x } = prs(raw); if ((sc = s) !== 200) return out(false, sc, `unexpected status: ${sc}`); const { exitIp, ...a } = ext(x); return exitIp ? out(true, sc, null, { exitIp, ...a }) : out(false, sc, 'probe json missing exit ip'); } catch (e) { return out(false, sc, String(e?.message || e)); } finally { try { tc?.close(); } catch {} try { !tc && so?.close(); } catch {} } },
-  scan = async (raw, to, rl) => { const c = pc(raw), rs = await Promise.all(TGS.map(async tg => { let r = await hit(c, tg, to, rl); if (!r.ok) { const fb = FBTGS[tg.n]; if (fb) r = await hit(c, fb, to, rl); } return r; })), { s, fs } = stk(rs); return { candidate: raw, ok: rs.some(x => x.ok), inferred_stack: s, supports_ipv4: fs.includes('ipv4'), supports_ipv6: fs.includes('ipv6'), dual_stack: s === 'dual_stack', probe_results: rs }; };
+  scan = async (raw, to, rl) => { const c = pc(raw), rs = await Promise.all(TGS.map(async tg => { let r; const fb = FBTGS[tg.n]; if (CONFIG.FORCE_FALLBACK && fb) { r = await hit(c, fb, to, rl); } else { r = await hit(c, tg, to, rl); if (!r.ok && fb) r = await hit(c, fb, to, rl); } return r; })), { s, fs } = stk(rs); return { candidate: raw, ok: rs.some(x => x.ok), inferred_stack: s, supports_ipv4: fs.includes('ipv4'), supports_ipv6: fs.includes('ipv6'), dual_stack: s === 'dual_stack', probe_results: rs }; };
 export default { async fetch(req) { try { const { cs, to, rl } = await inp(req); if (!cs.length) return js({ ok: false, error: 'missing candidate', usage: USE }, 400); const xs = await Promise.all(cs.map(c => scan(c, to, rl))); return js(xs.length === 1 ? xs[0] : xs); } catch (e) { return js({ ok: false, error: String(e?.message || e) }, 500); } } };
