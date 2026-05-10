@@ -1,3 +1,6 @@
+有没有热心同学测 `snippets.js` 和 `snippets_2.js` 表现差异？  
+
+---
 ## 文件说明  
 * **snippets.js**：支持 `!txt/socks5/http/https/sstp/turn`，这个 https 非完全体，不支持 IP  
 * **!txt.js**：支持 `!txt`  
